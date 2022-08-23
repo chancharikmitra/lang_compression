@@ -96,7 +96,9 @@ def main(_A: argparse.Namespace):
     )
 
     model = PretrainingModelFactory.from_config(_C).to(device)
-    ITERATION = CheckpointManager(model=model).load("pretrained_weights/encoder_test_v2.pth")
+    ITERATION = CheckpointManager(model=model).load("/shared/chancharikm/2022_Summer/language_leveraged_compression/pretrained_weights/encoder_test_v2.pth")
+    
+    #This block of code freezes the encoder and language model weights for unit testing
     if _C.MODEL.VISUAL.FROZEN:
         for name, param in model.named_parameters():
             if "encoder" in name:
@@ -107,6 +109,7 @@ def main(_A: argparse.Namespace):
                 print("Frozen Textual in eval_captioning: ", name)
             else:
                 print("Not Frozen: ", name)
+
     optimizer = OptimizerFactory.from_config(_C, model.named_parameters())
     scheduler = LRSchedulerFactory.from_config(_C, optimizer)
 
