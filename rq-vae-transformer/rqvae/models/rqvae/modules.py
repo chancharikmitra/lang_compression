@@ -69,7 +69,6 @@ class Encoder(nn.Module):
                                         kernel_size=3,
                                         stride=1,
                                         padding=1)
-
     def forward(self, x):
         # timestep embedding
         temb = None

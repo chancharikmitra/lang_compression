@@ -79,6 +79,7 @@ class RQVAE(Stage1Model):
 
     def encode(self, x):
         z_e = self.encoder(x)
+        #print("Encoder Output Shape: ", z_e.shape)
         z_e = self.quant_conv(z_e).permute(0, 2, 3, 1).contiguous()
         return z_e
 

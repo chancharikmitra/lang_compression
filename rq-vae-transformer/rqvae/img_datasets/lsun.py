@@ -25,20 +25,26 @@ from PIL import Image
 
 
 class LSUNClass(torchvision.datasets.VisionDataset):
-
-    subpaths = {'church': 'church/church_outdoor_train_lmdb',
-                'church_val': 'church/church_outdoor_val_lmdb',
+    subpaths = {'church': 'train',
+                'church_val': 'in_val',
                 'bedroom': 'bedroom/bedroom_train_lmdb',
                 'bedroom_val': 'bedroom/bedroom_val_lmdb',
                 'cat': 'cat',
                 }
+    #subpaths = {'church': 'church/church_outdoor_train_lmdb',
+    #            'church_val': 'church/church_outdoor_val_lmdb',
+    #            'bedroom': 'bedroom/bedroom_train_lmdb',
+    #            'bedroom_val': 'bedroom/bedroom_val_lmdb',
+    #            'cat': 'cat',
+    #            }
     valid_categories = ['church', 'bedroom', 'cat']
 
     def __init__(self, root, category_name='church', transform=None):
 
-        assert category_name in LSUNClass.valid_categories
+        #assert category_name in LSUNClass.valid_categories
         root = Path(root) / LSUNClass.subpaths[category_name]
-        print(root)
+        root = str(root)
+        print("Root Path: ",root, "Root Type: ", type(root))
 
         super(LSUNClass, self).__init__(root, transform=transform)
 

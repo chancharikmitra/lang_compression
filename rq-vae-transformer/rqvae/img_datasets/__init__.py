@@ -34,7 +34,7 @@ def create_dataset(config, is_eval=False, logger=None):
 
     if config.dataset.type == 'imagenet':
         root = root if root else 'data/imagenet'
-        dataset_trn = ImageNet(root, split='train', transform=transforms_trn)
+        dataset_trn = [1,2,3]#ImageNet(root, split='train', transform=transforms_trn)
         dataset_val = ImageNet(root, split='val', transform=transforms_val)
     elif config.dataset.type == 'imagenet_u':
         root = root if root else 'data/imagenet'
@@ -50,7 +50,10 @@ def create_dataset(config, is_eval=False, logger=None):
     elif config.dataset.type in ['LSUN-cat', 'LSUN-church', 'LSUN-bedroom']:
         root = root if root else 'data/lsun'
         category_name = config.dataset.type.split('-')[-1]
+        print("Category_Name for training dataset: ", category_name)
         dataset_trn = LSUNClass(root, category_name=category_name, transform=transforms_trn)
+        category_name = category_name + "_val"
+        print("Category_Name for validation datset: ", category_name)
         dataset_val = LSUNClass(root, category_name=category_name, transform=transforms_trn)
     else:
         raise ValueError('%s not supported...' % config.dataset.type)
