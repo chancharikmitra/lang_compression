@@ -71,15 +71,15 @@ if __name__ == '__main__':
 
     vqvae_model, config = load_model(args.vqvae)
     vqvae_model = vqvae_model.to(device)
-    vqvae_model = torch.nn.DataParallel(vqvae_model.decoder).eval()
+    vqvae_model = torch.nn.DataParallel(vqvae_model).eval()#.decoder).eval()
     logger.info(f'vqvae model loaded from {args.vqvae}')
 
     dataset_trn, dataset_val = create_dataset(config, is_eval=True, logger=logger)
     dataset = dataset_val if args.split in ['val', 'valid'] else dataset_trn
     logger.info(f'measuring rFID on {config.dataset.type}/{args.split}')
 
-    #rfid = compute_rfid(dataset, vqvae_model, batch_size=args.batch_size, device=device)
-    for i in range(50):
+    rfid = compute_rfid(dataset, vqvae_model, batch_size=args.batch_size, device=device)
+    '''for i in range(50):
         print(f"Decoder Output Shape: {vqvae_model(torch.zeros(32,256,8,8)).shape}")
-    print("Done")
+    print("Done")'''
     logger.info(f'rFID: {rfid:.4f}')
