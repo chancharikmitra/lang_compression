@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torchvision.transforms as transforms
-
+#import torchvision.transforms as transforms
+from torchvision import transforms as transforms
 def create_transforms(config, split='train', is_eval=False):
     if config.transforms.type == 'imagenet256x256':
         if split == 'train' and not is_eval:
