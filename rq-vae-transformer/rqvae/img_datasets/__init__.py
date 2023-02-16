@@ -21,8 +21,9 @@ from torchvision.datasets import ImageNet
 
 from .lsun import LSUNClass
 from .ffhq import FFHQ
-from .coco_images import CocoImages
+from .coco_captions import CaptioningDataset
 from .transforms import create_transforms
+from .transforms import create_alb_transforms
 
 SMOKE_TEST = bool(os.environ.get("SMOKE_TEST", 0))
 
@@ -38,9 +39,10 @@ def create_dataset(config, is_eval=False, logger=None):
         dataset_trn = [1,2,3]#ImageNet(root, split='train', transform=transforms_trn)
         dataset_val = ImageNet(root, split='val', transform=transforms_val)
     elif config.dataset.type == "coco":
-        root = root if root else 'data/imagenet'
-        dataset_trn = CocoImages(root=root+"/val2017", annFile=root+"/annotations/instances_val2017.json", transform=transforms_val) 
-        dataset_val = CocoImages(root=root+"/val2017", annFile=root+"/annotations/instances_val2017.json", transform=transforms_val)
+        #root = root if root else 'data/imagenet'
+        root = "data/coco"
+        dataset_trn = CaptioningDataset(data_root=root, split="train", transform=transforms_trn) 
+        dataset_val = CaptioningDataset(data_root=root, split="val", transform=transforms_val)
     elif config.dataset.type == 'imagenet_u':
         root = root if root else 'data/imagenet'
 

@@ -243,7 +243,8 @@ class TransformerDecoderTextualHead(TextualHead):
 
         # Convert to NHWC and project visual features to textual feature size.
         batch_size, channels, height, width = visual_features.size()
-        visual_features = visual_features.view(batch_size, channels, -1)
+        visual_features = visual_features.reshape(batch_size, channels, -1)
+        #print("Visual Features Shape ", visual_features.shape)
         visual_features = visual_features.permute(0, 2, 1)
 
         # shape: (batch_size, height * width, textual_feature_size)
@@ -253,7 +254,7 @@ class TransformerDecoderTextualHead(TextualHead):
         # Note that `max_caption_length` here may be less than the
         # `max_caption_length` passed in `__init__`, but it does not matter.
         batch_size, max_caption_length = caption_tokens.size()
-
+        #print(batch_size)
         # Create a mask based on caption lengths, shape: (batch_size, )
         # Form a binary mask: it is True for padding positions.
         # These positions will be ignored for multi-headed attention.
@@ -272,6 +273,12 @@ class TransformerDecoderTextualHead(TextualHead):
             future_mask = None
 
         # shape: (batch_size, max_caption_length, hidden_size)
+        #print("-------Textual Heads.py------------")
+        #print("Textual Feature Size:", self.textual_feature_size)
+        #print("Caption Embedding Size", caption_embeddings.shape)
+        #print("Projected Visual Features Size: ", visual_features.shape )
+        #print("Target Mask: ", future_mask.shape)
+        #print("Caption Mask: ", caption_mask.shape)
         textual_features = self.transformer(
             caption_embeddings,
             projected_visual_features,

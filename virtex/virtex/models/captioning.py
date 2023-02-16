@@ -97,13 +97,18 @@ class CaptioningModel(nn.Module):
         """
 
         # shape: (batch_size, channels, height, width)
+        
         visual_features = self.visual(batch["image"])
-        batch_size = visual_features.size(0)
+        #print("Visual Features ", visual_features.shape)
+        #batch_size = visual_features.size(0)
+        batch_size = batch["image"].size(0)
 
         if "caption_tokens" in batch:
             caption_tokens = batch["caption_tokens"]
             caption_lengths = batch["caption_lengths"]
-
+            #print("Batch:", batch["image"].shape)
+            #print("Caption Tokens Size: ", caption_tokens.shape)
+            #print("Caption Lengths Size: ", caption_lengths.shape)
             # shape: (batch_size, max_caption_length, vocab_size)
             output_logits = self.textual(
                 visual_features, caption_tokens, caption_lengths

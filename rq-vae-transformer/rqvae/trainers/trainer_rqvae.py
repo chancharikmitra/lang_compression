@@ -14,6 +14,9 @@
 
 import logging
 import os
+import psutil
+import linecache
+import tracemalloc
 
 import torch
 import torchvision
@@ -24,22 +27,47 @@ import rqvae.utils.dist as dist_utils
 
 from .accumulator import AccmStage1WithGAN
 from .trainer import TrainerTemplate
+from transformers import AutoTokenizer, CLIPModel
+
 
 logger = logging.getLogger(__name__)
 
 
 def calculate_adaptive_weight(nll_loss, g_loss, last_layer):
+    #print("Last Layer Grad: ", last_layer.grad)
     nll_grads = torch.autograd.grad(nll_loss, last_layer, retain_graph=True)[0]
     g_grads = torch.autograd.grad(g_loss, last_layer, retain_graph=True)[0]
 
     d_weight = torch.norm(nll_grads) / (torch.norm(g_grads) + 1e-4)
     d_weight = torch.clamp(d_weight, 0.0, 1e4).detach()
     return d_weight
+def display_top(snapshot, key_type='lineno', limit=10):
+    snapshot = snapshot.filter_traces((
+        tracemalloc.Filter(False, "<frozen importlib._bootstrap>"),
+        tracemalloc.Filter(False, "<unknown>"),
+    ))
+    top_stats = snapshot.statistics(key_type)
+
+    print("Top %s lines" % limit)
+    for index, stat in enumerate(top_stats[:limit], 1):
+        frame = stat.traceback[0]
+        print("#%s: %s:%s: %.1f KiB"
+              % (index, frame.filename, frame.lineno, stat.size / 1024))
+        line = linecache.getline(frame.filename, frame.lineno).strip()
+        if line:
+            print('    %s' % line)
+
+    other = top_stats[limit:]
+    if other:
+        size = sum(stat.size for stat in other)
+        print("%s other: %.1f KiB" % (len(other), size / 1024))
+    total = sum(stat.size for stat in top_stats)
+    print("Total allocated size: %.1f KiB" % (total / 1024))
 
 
 class Trainer(TrainerTemplate):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, with_captioning=True, with_CLIPLoss=True, **kwargs):
         super().__init__(*args, **kwargs)
 
         assert len(self.config.arch.hparams.code_shape) in [2, 3]
@@ -48,7 +76,12 @@ class Trainer(TrainerTemplate):
             self.n_codebook = 1
         else:
             self.n_codebook = self.config.arch.hparams.code_shape[-1]
+        #With Captioning Flag:
+        self.with_captioning = with_captioning
 
+        #With CLIPLoss Flag:
+        self.with_CLIPLoss = with_CLIPLoss
+        
         # GAN related part
         gan_config = self.config.gan
 
@@ -89,7 +122,7 @@ class Trainer(TrainerTemplate):
         config = self.config
 
         metric_names = [
-            'loss_total', 'loss_recon', 'loss_latent',
+            'loss_total', 'loss_recon', 'loss_latent', 'loss_CLIP', 'loss_captioning',
             'loss_pcpt', 'loss_gen', 'loss_disc', 'g_weight',
             'logits_real', 'logits_fake',
         ]
@@ -154,15 +187,21 @@ class Trainer(TrainerTemplate):
         discriminator.eval()
         for it, inputs in pbar:
             model.zero_grad()
-            xs = inputs[0].to(self.device)
-
-            outputs = model(xs)
+            #xs = inputs[0].to(self.device)
+            xs = inputs["image"].to(self.device, non_blocking=True)
+            inputs["image_id"] = inputs["image_id"].to(self.device, non_blocking=True)
+            inputs["caption_tokens"] = inputs["caption_tokens"].to(self.device, non_blocking=True)
+            inputs["noitpac_tokens"] = inputs["noitpac_tokens"].to(self.device, non_blocking=True)
+            inputs["caption_lengths"] = inputs["caption_lengths"].to(self.device, non_blocking=True)
+            outputs = model(inputs)
             xs_recon = outputs[0]
             outputs = model.module.compute_loss(*outputs, xs=xs, valid=True)
 
             loss_rec_lat = outputs['loss_total']
             loss_recon = outputs['loss_recon']
             loss_latent = outputs['loss_latent']
+            #Captioning Loss:
+            loss_captioning = outputs['loss_virtex']
 
             loss_pcpt = self.perceptual_loss(xs, xs_recon)
             p_weight = self.perceptual_weight
@@ -188,6 +227,7 @@ class Trainer(TrainerTemplate):
                            loss_pcpt=loss_pcpt,
                            loss_gen=loss_gen,
                            loss_disc=loss_disc,
+                           loss_captioning=loss_captioning,
                            **logits,
                            )
             accm.update(codes,
@@ -218,9 +258,23 @@ class Trainer(TrainerTemplate):
         return summary
 
     def train(self, optimizer=None, scheduler=None, scaler=None, epoch=0):
+        tracemalloc.start()
         model = self.model
+        #Freeze all weights except bridge, dimension layers, and last decoder layer.
+        for name, param in model.named_parameters():
+            #count += 1
+            if "bridge" in name or "fourToEight" in name or "eightToFour" in name:
+                param.requires_grad=True
+            else:
+                param.requires_grad=False
+                
+        #model.module.encoder.conv_out.weight.requires_grad = True
+        #model.module.encoder.conv_out.bias.requires_grad = True
+        model.module.decoder.conv_out.weight.requires_grad = True
+        model.module.decoder.conv_out.bias.requires_grad = True
+        #print("Last Conv Weight!!!!!  ", model.module.decoder.conv_out.weight.requires_grad)
         model.train()
-
+        #self.model.module.bridge[4].weight.register_hook(print)
         discriminator = self.discriminator
         discriminator.train()
         use_discriminator = True if epoch >= self.gan_start_epoch else False
@@ -233,31 +287,93 @@ class Trainer(TrainerTemplate):
             pbar = enumerate(self.loader_trn)
 
         for it, inputs in pbar:
+            #print('The CPU usage is (0.5): ', psutil.cpu_percent(0.5))
             model.zero_grad(set_to_none=True)
-            xs = inputs[0].to(self.device, non_blocking=True)
-
-            outputs = model(xs)
+            #print("Model Device: ", model.device)
+            #print(inputs.shape)
+            #exit()
+            xs = inputs["image"].to(self.device, non_blocking=True)
+            inputs["image_id"] = inputs["image_id"].to(self.device, non_blocking=True)
+            inputs["caption_tokens"] = inputs["caption_tokens"].to(self.device, non_blocking=True)
+            inputs["noitpac_tokens"] = inputs["noitpac_tokens"].to(self.device, non_blocking=True)
+            inputs["caption_lengths"] = inputs["caption_lengths"].to(self.device, non_blocking=True)
+            '''print("Image Size:", inputs["image"].shape)
+            print("Image ID Size:", inputs["image_id"].shape)
+            print("Caption Size:", inputs["caption_tokens"].shape)
+            print("Noitpac Size:", inputs["noitpac_tokens"].shape)
+            print("Caption Lengths Size:", inputs["caption_lengths"].shape)
+            print(inputs["image"].size(0))'''
+            #xs = inputs[0].to(self.device, non_blocking=True)
+            #Pass all inputs
+            
+            outputs = model(inputs)
+            code = outputs[2]
+            #print("Code Device: ", code.device)
             xs_recon = outputs[0]
             outputs = model.module.compute_loss(*outputs, xs=xs)
 
+
+            #Calculating Losses:
             loss_rec_lat = outputs['loss_total']
             loss_recon = outputs['loss_recon']
             loss_latent = outputs['loss_latent']
-
+            #Captioning Loss:
+            loss_captioning = outputs['loss_virtex']
             # generator loss
             loss_pcpt = self.perceptual_loss(xs, xs_recon)
             p_weight = self.perceptual_weight
+            captioning_weight = (1/30)
 
+            #CLIP Text Feature Loss:
+            code = code.type(torch.float32)
+            CLIP = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(self.device, non_blocking=True)
+            tokenizer = AutoTokenizer.from_pretrained("openai/clip-vit-base-patch32")
+
+            CLIPInputs = tokenizer(inputs['raw_caption'], padding=True, return_tensors="pt").to(self.device)
+            #print('The CPU usage is: ', psutil.cpu_percent(4))
+            #print(CLIPInputs)
+            #print("CLIP Inputs Device: ", CLIPInputs.device)
+            CLIPFeatures = CLIP.get_text_features(**CLIPInputs)
+            #CLIPFeatures = CLIPFeatures.to(self.device, non_blocking=True)
+            #print("CLIP Feature Device: ", CLIPFeatures.device) 
+            if code.shape[1] == 8:
+                CLIPFeatures = torch.reshape(CLIPFeatures, (CLIPFeatures.shape[0], 8, 8, -1))
+            elif code.shape[1] == 4:
+                CLIPFeatures = torch.reshape(CLIPFeatures, (CLIPFeatures.shape[0], 4, 4, -1))
+            featureList = torch.split(CLIPFeatures, 4, 3)
+            averagedCLIP = torch.mean(torch.stack(featureList), dim=0)
+
+            means = code.mean(dim=0, keepdim=True)
+            stds = code.std(dim=0, keepdim=True)
+            normCode = (code - means) / stds
+
+
+            MSELoss = torch.nn.MSELoss()
+            CLIPLoss = MSELoss(normCode, averagedCLIP)
+            
             if use_discriminator:
                 loss_gen, _, _ = self.gan_loss(xs, xs_recon, mode='gen')
                 g_weight = calculate_adaptive_weight(loss_recon + p_weight * loss_pcpt,
                                                      loss_gen,
                                                      last_layer=self.get_last_layer())
+                #g_weight = torch.zeros((), device=self.device)
+                #loss_gen = torch.zeros((), device=self.device)
             else:
                 loss_gen = torch.zeros((), device=self.device)
                 g_weight = torch.zeros((), device=self.device)
-
-            loss_gen_total = loss_rec_lat + p_weight * loss_pcpt + g_weight * self.disc_weight * loss_gen
+            #
+            #
+            #-------Added Captioning Loss Here---------
+            #
+            #
+            #print(self.with_captioning, " With_captioning")
+            
+            if self.with_captioning:
+                loss_gen_total = loss_rec_lat + p_weight * loss_pcpt + g_weight * self.disc_weight * loss_gen + loss_captioning * captioning_weight
+            elif self.with_CLIPLoss:
+                loss_gen_total = loss_rec_lat + p_weight * loss_pcpt + g_weight * self.disc_weight * loss_gen + CLIPLoss/36.0
+            else:
+                loss_gen_total = loss_rec_lat + p_weight * loss_pcpt + g_weight * self.disc_weight * loss_gen
             loss_gen_total.backward()
 
             optimizer.step()
@@ -286,6 +402,8 @@ class Trainer(TrainerTemplate):
                 'loss_gen': loss_gen.detach(),
                 'loss_disc': loss_disc.detach(),
                 'g_weight': g_weight.detach(),
+                'loss_CLIP': CLIPLoss.detach(),
+                'loss_captioning':loss_captioning.detach(),
                 **logits,
             }
             accm.update(codes, metrics, count=1)
@@ -313,6 +431,9 @@ class Trainer(TrainerTemplate):
 
         summary = accm.get_summary()
         summary['xs'] = xs
+        
+        snapshot = tracemalloc.take_snapshot()
+        display_top(snapshot)
 
         return summary
 
@@ -355,7 +476,26 @@ class Trainer(TrainerTemplate):
         model.eval()
 
         xs_real = xs[:16]
-        xs_recon = model(xs_real)[0]
+        #print("xs_real: ", xs_real)
+        #print("xs_real shape: ", xs_real.shape)
+        #
+        #--------Creating Zero Tensors for Captions
+        #
+        inputs = {
+            "image_id": torch.zeros(xs_real.size(0), dtype=torch.long),
+            "image": xs_real,
+            "caption_tokens": torch.zeros(xs_real.size(0), 20, dtype=torch.long),
+            "noitpac_tokens": torch.zeros(xs_real.size(0), 20, dtype=torch.long),
+            "caption_lengths": torch.zeros(xs_real.size(0), dtype=torch.long),
+        }
+        inputs["image_id"] = inputs["image_id"].to(self.device, non_blocking=True)
+        inputs["caption_tokens"] = inputs["caption_tokens"].to(self.device, non_blocking=True)
+        inputs["noitpac_tokens"] = inputs["noitpac_tokens"].to(self.device, non_blocking=True)
+        inputs["caption_lengths"] = inputs["caption_lengths"].to(self.device, non_blocking=True)
+        #
+        # 
+        # #xs_recon = model(xs_real)[0]
+        xs_recon = model(inputs)[0]
         xs_real, xs_recon = model.module.get_recon_imgs(xs_real, xs_recon)
 
         grid = torch.cat([xs_real[:8], xs_recon[:8], xs_real[8:], xs_recon[8:]], dim=0)
@@ -380,7 +520,25 @@ class Trainer(TrainerTemplate):
         model_fn = model if not hasattr(model, 'module') else model.module
 
         xs_real = xs[:16]
-        xs_recon = model_fn.forward_partial_code(xs_real, code_idx, decode_type)
+        #
+        #--------Creating Zero Tensors for Captions
+        #
+        inputs = {
+            "image_id": torch.zeros(xs_real.size(0), dtype=torch.long),
+            "image": xs_real,
+            "caption_tokens": torch.zeros(xs_real.size(0), 20, dtype=torch.long),
+            "noitpac_tokens": torch.zeros(xs_real.size(0), 20, dtype=torch.long),
+            "caption_lengths": torch.zeros(xs_real.size(0), dtype=torch.long),
+        }
+        inputs["image_id"] = inputs["image_id"].to(self.device, non_blocking=True)
+        inputs["caption_tokens"] = inputs["caption_tokens"].to(self.device, non_blocking=True)
+        inputs["noitpac_tokens"] = inputs["noitpac_tokens"].to(self.device, non_blocking=True)
+        inputs["caption_lengths"] = inputs["caption_lengths"].to(self.device, non_blocking=True)
+        #
+        # 
+        #
+        #xs_recon = model_fn.forward_partial_code(xs_real, code_idx, decode_type)
+        xs_recon = model_fn.forward_partial_code(inputs, code_idx, decode_type)
         xs_real, xs_recon = model_fn.get_recon_imgs(xs_real, xs_recon)
 
         grid = torch.cat([xs_real[:8], xs_recon[:8], xs_real[8:], xs_recon[8:]], dim=0)

@@ -23,6 +23,8 @@ from rqvae.models import create_model
 from rqvae.metrics.fid import compute_rfid
 from rqvae.utils.config import load_config, augment_arch_defaults
 
+from virtex.utils.checkpointing import CheckpointManager
+
 
 def load_model(path, ema=False):
 
@@ -32,8 +34,11 @@ def load_model(path, ema=False):
 
     model, _ = create_model(config.arch, ema=False)
     ckpt = torch.load(path)['state_dict_ema'] if ema else torch.load(path)['state_dict']
-    model.load_state_dict(ckpt)
-
+    model.load_state_dict(ckpt, strict=False)
+    _ = CheckpointManager(model=model).load("/shared/chancharikm/2022_Summer/language_leveraged_compression/pretrained_weights/bicaptioning_R_50_L1_H2048.pth")
+    print("Weights Loaded!")
+    
+    #print(model)
     return model, config
 
 
@@ -57,7 +62,7 @@ if __name__ == '__main__':
     Log is saved to `rfid.log` in the same directory as the given vqvae model. 
     """
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--batch-size', type=int, default=100,
+    parser.add_argument('--batch-size', type=int, default=1,
                         help='Batch size to use')
     parser.add_argument('--split', type=str, default='val')
     parser.add_argument('--vqvae', type=str, default='', required=True,
@@ -76,6 +81,7 @@ if __name__ == '__main__':
 
     dataset_trn, dataset_val = create_dataset(config, is_eval=True, logger=logger)
     dataset = dataset_val if args.split in ['val', 'valid'] else dataset_trn
+    #print("Dataset[0]",dataset[0])
     logger.info(f'measuring rFID on {config.dataset.type}/{args.split}')
 
     rfid = compute_rfid(dataset, vqvae_model, batch_size=args.batch_size, device=device)

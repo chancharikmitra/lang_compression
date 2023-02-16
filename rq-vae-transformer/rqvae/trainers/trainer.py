@@ -72,7 +72,7 @@ class TrainerTemplate():
         self.loader_trn = DataLoader(
             self.dataset_trn, sampler=self.sampler_trn, shuffle=False, pin_memory=True,
             batch_size=config.experiment.batch_size,
-            num_workers=num_workers,
+            num_workers=num_workers, collate_fn=self.dataset_trn.collate_fn
         )
 
         self.sampler_val = torch.utils.data.distributed.DistributedSampler(
@@ -84,7 +84,7 @@ class TrainerTemplate():
         self.loader_val = DataLoader(
             self.dataset_val, sampler=self.sampler_val, shuffle=False, pin_memory=True,
             batch_size=config.experiment.batch_size,
-            num_workers=num_workers
+            num_workers=num_workers, collate_fn=self.dataset_trn.collate_fn
         )
 
     def train(self, optimizer=None, scheduler=None, scaler=None, epoch=0):

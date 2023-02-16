@@ -25,7 +25,7 @@ class EncoderBridge(VQ_CVAE):
                 if "encoder" in name:
                     print("Freezing: ", name)
                     param.requires_grad = False'''
-            
+
     def forward(self, x):
         encoder_out = self.encode(x)
         return self.bridge(encoder_out)

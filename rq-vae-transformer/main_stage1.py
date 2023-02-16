@@ -27,6 +27,8 @@ from rqvae.optimizer import create_optimizer, create_scheduler
 from rqvae.utils.utils import set_seed, compute_model_size, get_num_conv_linear_layers
 from rqvae.utils.setup import setup
 
+from virtex.utils.checkpointing import CheckpointManager
+
 
 parser = argparse.ArgumentParser()
 
@@ -36,7 +38,12 @@ parser.add_argument('-l', '--load-path', type=str, default='')
 parser.add_argument('-t', '--test-batch-size', type=int, default=200)
 parser.add_argument('-e', '--test-epoch', type=int, default=-1)
 parser.add_argument('-p', '--postfix', type=str, default='')
+
+#Tested Hyperparameters (latent dimension/latent codebook size handled in config file)
 parser.add_argument('--seed', type=int, default=0)
+parser.add_argument('--captioning_loss', action=argparse.BooleanOptionalAction, default=True, help="specifies whether or not captioning loss will be included when optimizing (options: --captioning_loss or --no-captioning_loss")
+parser.add_argument('--CLIPLoss', action=argparse.BooleanOptionalAction, default=True, help="specifies whether or not CLIPLoss will be included when optimizing (options: --CLIPLoss or --no-CLIPLoss")
+
 
 parser.add_argument('--world_size', default=-1, type=int, help='number of nodes for distributed training')
 parser.add_argument('--local_rank', default=-1, type=int, help='local rank for distributed training')
@@ -52,8 +59,8 @@ set_seed(args.seed)
 
 
 if __name__ == '__main__':
-
     config, logger, writer = setup(args, extra_args)
+    
     distenv = config.runtime.distenv
 
     torch.backends.cudnn.benchmark = True
@@ -63,8 +70,22 @@ if __name__ == '__main__':
     dataset_trn, dataset_val = create_dataset(config, is_eval=args.eval, logger=logger)
     model, model_ema = create_model(config.arch, ema=config.arch.ema is not None)
     model = model.to(device)
+    #print(args.captioning_loss)
+    #
+    #-------Load Pretrained Weights!!-----
+    #
+    ckpt_rqvae = torch.load("/shared/chancharikm/2022_Summer/language_leveraged_compression/pretrained_weights/rq_vae_weights/imagenet_480M/stage1/model.pt")['state_dict']
+    model.load_state_dict(ckpt_rqvae, strict=False)
+
+    _ = CheckpointManager(model=model).load("/shared/chancharikm/2022_Summer/language_leveraged_compression/pretrained_weights/bicaptioning_R_50_L1_H2048.pth")
+    #print("Weights Loaded!")
+    #
+    #
+    #
     if model_ema:
         model_ema = model_ema.to(device)
+
+    #With Captioning:
     trainer = create_trainer(config)
 
     train_epochs = config.experiment.epochs
@@ -80,7 +101,7 @@ if __name__ == '__main__':
             optimizer, config.optimizer.warmup, steps_per_epoch,
             config.experiment.epochs, distenv
         )
-
+        
     disc_state_dict = None
     if not args.load_path == '':
         ckpt = torch.load(args.load_path, map_location='cpu')
@@ -100,7 +121,7 @@ if __name__ == '__main__':
                 logger.info(f'Optimizer, scheduelr, and epoch is resumed')
 
     if distenv.master:
-        print(model)
+        #print(model)
         compute_model_size(model, logger)
 
     if distenv.master and not args.eval:
@@ -110,8 +131,9 @@ if __name__ == '__main__':
     if model_ema:
         model_ema = dist_utils.dataparallel_and_sync(distenv, model_ema)
     trainer = trainer(model, model_ema, dataset_trn, dataset_val, config, writer,
-                      device, distenv, disc_state_dict=disc_state_dict)
+                      device, distenv, with_captioning=args.captioning_loss, with_CLIPLoss = args.CLIPLoss, disc_state_dict=disc_state_dict)
     if args.eval:
+        print("HERE!!!!!!")
         trainer.eval(valid=False, verbose=True)
         trainer.eval(valid=True, verbose=True)
         if model_ema:

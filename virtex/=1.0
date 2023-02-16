@@ -1,0 +1,35 @@
+Collecting albumentations
+  Downloading albumentations-1.3.0-py3-none-any.whl (123 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 123.5/123.5 kB 28.6 MB/s eta 0:00:00
+Collecting opencv-python-headless>=4.1.1
+  Downloading opencv_python_headless-4.6.0.66-cp36-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (48.3 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 48.3/48.3 MB 32.6 MB/s eta 0:00:00
+Requirement already satisfied: PyYAML in /home/chancharikm/anaconda3/envs/lang_comp_env/lib/python3.7/site-packages (from albumentations) (5.3.1)
+Requirement already satisfied: numpy>=1.11.1 in /home/chancharikm/anaconda3/envs/lang_comp_env/lib/python3.7/site-packages (from albumentations) (1.21.6)
+Collecting qudida>=0.0.4
+  Downloading qudida-0.0.4-py3-none-any.whl (3.5 kB)
+Collecting scikit-image>=0.16.1
+  Downloading scikit_image-0.19.3-cp37-cp37m-manylinux_2_12_x86_64.manylinux2010_x86_64.whl (13.5 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 13.5/13.5 MB 54.7 MB/s eta 0:00:00
+Requirement already satisfied: scipy in /home/chancharikm/anaconda3/envs/lang_comp_env/lib/python3.7/site-packages (from albumentations) (1.7.3)
+Requirement already satisfied: typing-extensions in /home/chancharikm/anaconda3/envs/lang_comp_env/lib/python3.7/site-packages (from qudida>=0.0.4->albumentations) (4.3.0)
+Requirement already satisfied: scikit-learn>=0.19.1 in /home/chancharikm/anaconda3/envs/lang_comp_env/lib/python3.7/site-packages (from qudida>=0.0.4->albumentations) (0.24.0)
+Collecting tifffile>=2019.7.26
+  Downloading tifffile-2021.11.2-py3-none-any.whl (178 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 178.9/178.9 kB 60.2 MB/s eta 0:00:00
+Collecting imageio>=2.4.1
+  Downloading imageio-2.22.1-py3-none-any.whl (3.4 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.4/3.4 MB 66.7 MB/s eta 0:00:00
+Collecting PyWavelets>=1.1.1
+  Downloading PyWavelets-1.3.0-cp37-cp37m-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_12_x86_64.manylinux2010_x86_64.whl (6.4 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.4/6.4 MB 79.9 MB/s eta 0:00:00
+Collecting networkx>=2.2
+  Downloading networkx-2.6.3-py3-none-any.whl (1.9 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.9/1.9 MB 89.1 MB/s eta 0:00:00
+Requirement already satisfied: packaging>=20.0 in /home/chancharikm/anaconda3/envs/lang_comp_env/lib/python3.7/site-packages (from scikit-image>=0.16.1->albumentations) (21.3)
+Requirement already satisfied: pillow!=7.1.0,!=7.1.1,!=8.3.0,>=6.1.0 in /home/chancharikm/anaconda3/envs/lang_comp_env/lib/python3.7/site-packages (from scikit-image>=0.16.1->albumentations) (9.2.0)
+Requirement already satisfied: pyparsing!=3.0.5,>=2.0.2 in /home/chancharikm/anaconda3/envs/lang_comp_env/lib/python3.7/site-packages (from packaging>=20.0->scikit-image>=0.16.1->albumentations) (3.0.9)
+Requirement already satisfied: joblib>=0.11 in /home/chancharikm/anaconda3/envs/lang_comp_env/lib/python3.7/site-packages (from scikit-learn>=0.19.1->qudida>=0.0.4->albumentations) (1.2.0)
+Requirement already satisfied: threadpoolctl>=2.0.0 in /home/chancharikm/anaconda3/envs/lang_comp_env/lib/python3.7/site-packages (from scikit-learn>=0.19.1->qudida>=0.0.4->albumentations) (3.1.0)
+Installing collected packages: tifffile, PyWavelets, opencv-python-headless, networkx, imageio, scikit-image, qudida, albumentations
+Successfully installed PyWavelets-1.3.0 albumentations-1.3.0 imageio-2.22.1 networkx-2.6.3 opencv-python-headless-4.6.0.66 qudida-0.0.4 scikit-image-0.19.3 tifffile-2021.11.2

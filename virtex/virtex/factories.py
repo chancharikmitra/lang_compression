@@ -316,7 +316,8 @@ class VisualBackboneFactory(Factory):
 
     PRODUCTS: Dict[str, Callable] = {
         "torchvision": visual_backbones.TorchvisionVisualBackbone,
-        "vq_vae": EncoderBridge, 
+        "vq_vae": EncoderBridge,
+        "identity": nn.Identity, 
     }
 
     @classmethod

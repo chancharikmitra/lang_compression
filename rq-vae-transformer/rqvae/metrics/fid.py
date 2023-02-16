@@ -20,6 +20,7 @@ else:
     import pickle
 
 
+
 class InceptionWrapper(InceptionV3):
 
     def forward(self, inp):
@@ -130,7 +131,7 @@ def compute_statistics_dataset(dataset,
     if inception_model is None:
         inception_model = get_inception_model().to(device)
 
-    loader = DataLoader(dataset, shuffle=False, pin_memory=True, batch_size=batch_size, num_workers=16)
+    loader = DataLoader(dataset, shuffle=False, pin_memory=True, batch_size=batch_size, num_workers=16, collate_fn=dataset.collate_fn)
 
     inception_model.eval()
     if stage1_model:
@@ -145,9 +146,17 @@ def compute_statistics_dataset(dataset,
     sample_max = torch.tensor(float('-inf'), device=device)
     sample_min = torch.tensor(float('inf'), device=device)
 
-    for xs, _ in tqdm(loader, desc="compute acts"):
-        xs = xs.to(device, non_blocking=True)
+    for each in tqdm(loader, desc="compute acts"):
+        
+        #Previously:
+        '''for xs, _ in tqdm(loader, desc="compute acts"):
+        xs = xs.to(device, non_blocking=True)'''
 
+        xs = each["image"].to(device, non_blocking=True)
+        each["image_id"] = each["image_id"].to(device, non_blocking=True)
+        each["caption_tokens"] = each["caption_tokens"].to(device, non_blocking=True)
+        each["noitpac_tokens"] = each["noitpac_tokens"].to(device, non_blocking=True)
+        each["caption_lengths"] = each["caption_lengths"].to(device, non_blocking=True)
         # we are assuming that dataset returns value in -1 ~ 1 -> remap to 0 ~ 1
         xs = torch.clamp(xs*0.5 + 0.5, 0, 1)
 
@@ -164,9 +173,23 @@ def compute_statistics_dataset(dataset,
             # here we assume that stage1 model input & output values are in -1 ~ 1 range
             # this may not cover DiscreteVAE
             imgs = 2. * xs - 1.
+            '''
+            Old Version
             xs_recon = torch.cat([
                 stage1_model(imgs[i:i+1])[0] for i in range(imgs.shape[0])
             ], dim=0)
+            '''
+            #New Version:
+            each["image"] = imgs[0:1]
+            #print("Premodel Image Shape: ", each["image"].shape)
+            #print("Premodel Caption Token Shape: ", each["caption_tokens"].shape)
+            #print("Premodel Caption Lengths Shape: ", each["caption_lengths"].shape)
+            xs_recon = stage1_model(each)[0]
+            for i in range(1, imgs.shape[0]):
+                im = imgs[i:i+1]
+                each["image"] = im
+                xs_recon = torch.cat([xs_recon, stage1_model(each)[0]], dim=0)
+
             xs_recon = torch.clamp(xs_recon * 0.5 + 0.5, 0, 1)
             act_recon = inception_model(xs_recon).cpu()
             acts_recon.append(act_recon)
