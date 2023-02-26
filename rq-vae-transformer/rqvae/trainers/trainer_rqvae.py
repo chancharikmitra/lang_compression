@@ -27,7 +27,7 @@ import rqvae.utils.dist as dist_utils
 
 from .accumulator import AccmStage1WithGAN
 from .trainer import TrainerTemplate
-from transformers import AutoTokenizer, CLIPModel
+from transformers import  CLIPModel
 
 
 logger = logging.getLogger(__name__)
@@ -193,6 +193,8 @@ class Trainer(TrainerTemplate):
             inputs["caption_tokens"] = inputs["caption_tokens"].to(self.device, non_blocking=True)
             inputs["noitpac_tokens"] = inputs["noitpac_tokens"].to(self.device, non_blocking=True)
             inputs["caption_lengths"] = inputs["caption_lengths"].to(self.device, non_blocking=True)
+            inputs["CLIP_input_ids"] = inputs["CLIP_input_ids"].to(self.device, non_blocking=True)
+            inputs["CLIP_attention_mask"] = inputs["CLIP_attention_mask"].to(self.device, non_blocking=True)
             outputs = model(inputs)
             xs_recon = outputs[0]
             outputs = model.module.compute_loss(*outputs, xs=xs, valid=True)
@@ -297,6 +299,9 @@ class Trainer(TrainerTemplate):
             inputs["caption_tokens"] = inputs["caption_tokens"].to(self.device, non_blocking=True)
             inputs["noitpac_tokens"] = inputs["noitpac_tokens"].to(self.device, non_blocking=True)
             inputs["caption_lengths"] = inputs["caption_lengths"].to(self.device, non_blocking=True)
+            #print(type(inputs["caption_tokens"]))
+            inputs["CLIP_input_ids"] = inputs["CLIP_input_ids"].to(self.device, non_blocking=True)
+            inputs["CLIP_attention_mask"] = inputs["CLIP_attention_mask"].to(self.device, non_blocking=True)
             '''print("Image Size:", inputs["image"].shape)
             print("Image ID Size:", inputs["image_id"].shape)
             print("Caption Size:", inputs["caption_tokens"].shape)
@@ -327,14 +332,15 @@ class Trainer(TrainerTemplate):
             #CLIP Text Feature Loss:
             code = code.type(torch.float32)
             CLIP = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(self.device, non_blocking=True)
-            tokenizer = AutoTokenizer.from_pretrained("openai/clip-vit-base-patch32")
+            #tokenizer = AutoTokenizer.from_pretrained("openai/clip-vit-base-patch32")
 
-            CLIPInputs = tokenizer(inputs['raw_caption'], padding=True, return_tensors="pt").to(self.device)
+            #CLIPInputs = tokenizer(inputs['raw_caption'], padding=True, return_tensors="pt").to(self.device)
             #print('The CPU usage is: ', psutil.cpu_percent(4))
             #print(CLIPInputs)
             #print("CLIP Inputs Device: ", CLIPInputs.device)
-            CLIPFeatures = CLIP.get_text_features(**CLIPInputs)
-            #CLIPFeatures = CLIPFeatures.to(self.device, non_blocking=True)
+            #CLIPInputs = (inputs["CLIP_input_ids"], inputs["CLIP_attention_mask"])
+            CLIPFeatures = CLIP.get_text_features(input_ids=inputs["CLIP_input_ids"], attention_mask=inputs["CLIP_attention_mask"])
+            CLIPFeatures = CLIPFeatures.to(self.device, non_blocking=True)
             #print("CLIP Feature Device: ", CLIPFeatures.device) 
             if code.shape[1] == 8:
                 CLIPFeatures = torch.reshape(CLIPFeatures, (CLIPFeatures.shape[0], 8, 8, -1))
@@ -433,6 +439,7 @@ class Trainer(TrainerTemplate):
         summary['xs'] = xs
         
         snapshot = tracemalloc.take_snapshot()
+        print("Display Top: ")
         display_top(snapshot)
 
         return summary

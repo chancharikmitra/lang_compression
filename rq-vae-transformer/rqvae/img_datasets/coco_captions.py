@@ -11,6 +11,7 @@ from virtex.data.datasets.coco_captions import CocoCaptionsDataset
 from virtex import factories
 
 from PIL import Image
+from transformers import AutoTokenizer
 
 
 class CaptioningDataset(Dataset):
@@ -81,8 +82,12 @@ class CaptioningDataset(Dataset):
         #Without Caption Transform:
         #image = self.transform(Image.fromarray(image))
         #print("Caption Before:", caption)
-    
+        
+        #CLIP Input --------------
+        tokenizer = AutoTokenizer.from_pretrained("openai/clip-vit-base-patch32")
 
+        CLIPInput = tokenizer(caption, padding=True, return_tensors="pt")#.to(self.device)
+        #------------------
         caption_tokens = [self.sos_id, *self.tokenizer.encode(caption), self.eos_id]
         caption_tokens = caption_tokens[: self.max_caption_length]
         return {
@@ -91,13 +96,13 @@ class CaptioningDataset(Dataset):
             "caption_tokens": torch.tensor(caption_tokens, dtype=torch.long),
             "noitpac_tokens": torch.tensor(caption_tokens, dtype=torch.long).flip(0),
             "caption_lengths": torch.tensor(len(caption_tokens), dtype=torch.long),
-            "raw_caption": caption
+            "CLIP_input_ids": torch.reshape(CLIPInput["input_ids"], [-1]),
+            "CLIP_attention_mask":  torch.reshape(CLIPInput["attention_mask"], [-1])
         }
 
     def collate_fn(
         self, data: List[Dict[str, torch.Tensor]]
     ) -> Dict[str, torch.Tensor]:
-
         # Pad `caption_tokens` and `masked_labels` up to this length.
         caption_tokens = torch.nn.utils.rnn.pad_sequence(
             [d["caption_tokens"] for d in data],
@@ -109,11 +114,22 @@ class CaptioningDataset(Dataset):
             batch_first=True,
             padding_value=self.padding_idx,
         )
+        CLIP_input_ids = torch.nn.utils.rnn.pad_sequence(
+            [d["CLIP_input_ids"] for d in data],
+            batch_first=True,
+            padding_value=0
+        )
+        CLIP_attention_mask = torch.nn.utils.rnn.pad_sequence(
+            [d["CLIP_attention_mask"] for d in data],
+            batch_first=True,
+            padding_value=0
+        )
         return {
             "image_id": torch.stack([d["image_id"] for d in data], dim=0),
             "image": torch.stack([d["image"] for d in data], dim=0),
             "caption_tokens": caption_tokens,
             "noitpac_tokens": noitpac_tokens,
             "caption_lengths": torch.stack([d["caption_lengths"] for d in data]),
-            "raw_caption": [d["raw_caption"] for d in data]
+            "CLIP_input_ids": CLIP_input_ids,
+            "CLIP_attention_mask": CLIP_attention_mask
         }
