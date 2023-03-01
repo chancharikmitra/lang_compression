@@ -27,8 +27,7 @@ import rqvae.utils.dist as dist_utils
 
 from .accumulator import AccmStage1WithGAN
 from .trainer import TrainerTemplate
-from transformers import  CLIPModel
-
+import clip
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +40,7 @@ def calculate_adaptive_weight(nll_loss, g_loss, last_layer):
     d_weight = torch.norm(nll_grads) / (torch.norm(g_grads) + 1e-4)
     d_weight = torch.clamp(d_weight, 0.0, 1e4).detach()
     return d_weight
-def display_top(snapshot, key_type='lineno', limit=10):
+'''def display_top(snapshot, key_type='lineno', limit=10):
     snapshot = snapshot.filter_traces((
         tracemalloc.Filter(False, "<frozen importlib._bootstrap>"),
         tracemalloc.Filter(False, "<unknown>"),
@@ -62,7 +61,7 @@ def display_top(snapshot, key_type='lineno', limit=10):
         size = sum(stat.size for stat in other)
         print("%s other: %.1f KiB" % (len(other), size / 1024))
     total = sum(stat.size for stat in top_stats)
-    print("Total allocated size: %.1f KiB" % (total / 1024))
+    print("Total allocated size: %.1f KiB" % (total / 1024))'''
 
 
 class Trainer(TrainerTemplate):
@@ -193,8 +192,9 @@ class Trainer(TrainerTemplate):
             inputs["caption_tokens"] = inputs["caption_tokens"].to(self.device, non_blocking=True)
             inputs["noitpac_tokens"] = inputs["noitpac_tokens"].to(self.device, non_blocking=True)
             inputs["caption_lengths"] = inputs["caption_lengths"].to(self.device, non_blocking=True)
-            inputs["CLIP_input_ids"] = inputs["CLIP_input_ids"].to(self.device, non_blocking=True)
-            inputs["CLIP_attention_mask"] = inputs["CLIP_attention_mask"].to(self.device, non_blocking=True)
+            inputs["CLIP_text"] = inputs["CLIP_text"]#.to(self.device, non_blocking=True)
+            #inputs["CLIP_input_ids"] = inputs["CLIP_input_ids"].to(self.device, non_blocking=True)
+            #inputs["CLIP_attention_mask"] = inputs["CLIP_attention_mask"].to(self.device, non_blocking=True)
             outputs = model(inputs)
             xs_recon = outputs[0]
             outputs = model.module.compute_loss(*outputs, xs=xs, valid=True)
@@ -260,7 +260,7 @@ class Trainer(TrainerTemplate):
         return summary
 
     def train(self, optimizer=None, scheduler=None, scaler=None, epoch=0):
-        tracemalloc.start()
+        #tracemalloc.start()
         model = self.model
         #Freeze all weights except bridge, dimension layers, and last decoder layer.
         for name, param in model.named_parameters():
@@ -299,9 +299,11 @@ class Trainer(TrainerTemplate):
             inputs["caption_tokens"] = inputs["caption_tokens"].to(self.device, non_blocking=True)
             inputs["noitpac_tokens"] = inputs["noitpac_tokens"].to(self.device, non_blocking=True)
             inputs["caption_lengths"] = inputs["caption_lengths"].to(self.device, non_blocking=True)
+            inputs["CLIP_text"] = inputs["CLIP_text"].to(self.device, non_blocking=True)
+            #print("Text Shape: ", inputs["CLIP_text"].shape)
             #print(type(inputs["caption_tokens"]))
-            inputs["CLIP_input_ids"] = inputs["CLIP_input_ids"].to(self.device, non_blocking=True)
-            inputs["CLIP_attention_mask"] = inputs["CLIP_attention_mask"].to(self.device, non_blocking=True)
+            #inputs["CLIP_input_ids"] = inputs["CLIP_input_ids"].to(self.device, non_blocking=True)
+            #inputs["CLIP_attention_mask"] = inputs["CLIP_attention_mask"].to(self.device, non_blocking=True)
             '''print("Image Size:", inputs["image"].shape)
             print("Image ID Size:", inputs["image_id"].shape)
             print("Caption Size:", inputs["caption_tokens"].shape)
@@ -331,7 +333,11 @@ class Trainer(TrainerTemplate):
 
             #CLIP Text Feature Loss:
             code = code.type(torch.float32)
-            CLIP = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(self.device, non_blocking=True)
+            CLIPText = inputs["CLIP_text"]
+            CLIPmodel, preprocess = clip.load("ViT-B/32", device=self.device)
+            CLIPFeatures = CLIPmodel.encode_text(CLIPText).type(torch.float32)
+            #print(f"Code type: {code.dtype} CLIPFeatures type: {CLIPFeatures.dtype}")
+            #CLIP = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(self.device, non_blocking=True)
             #tokenizer = AutoTokenizer.from_pretrained("openai/clip-vit-base-patch32")
 
             #CLIPInputs = tokenizer(inputs['raw_caption'], padding=True, return_tensors="pt").to(self.device)
@@ -339,22 +345,28 @@ class Trainer(TrainerTemplate):
             #print(CLIPInputs)
             #print("CLIP Inputs Device: ", CLIPInputs.device)
             #CLIPInputs = (inputs["CLIP_input_ids"], inputs["CLIP_attention_mask"])
-            CLIPFeatures = CLIP.get_text_features(input_ids=inputs["CLIP_input_ids"], attention_mask=inputs["CLIP_attention_mask"])
-            CLIPFeatures = CLIPFeatures.to(self.device, non_blocking=True)
+            #CLIPFeatures = CLIP.get_text_features(input_ids=inputs["CLIP_input_ids"], attention_mask=inputs["CLIP_attention_mask"])
+            #CLIPFeatures = CLIPFeatures.to(self.device, non_blocking=True)
             #print("CLIP Feature Device: ", CLIPFeatures.device) 
             if code.shape[1] == 8:
                 CLIPFeatures = torch.reshape(CLIPFeatures, (CLIPFeatures.shape[0], 8, 8, -1))
             elif code.shape[1] == 4:
                 CLIPFeatures = torch.reshape(CLIPFeatures, (CLIPFeatures.shape[0], 4, 4, -1))
             featureList = torch.split(CLIPFeatures, 4, 3)
-            averagedCLIP = torch.mean(torch.stack(featureList), dim=0)
+            CLIPFeatures = torch.mean(torch.stack(featureList), dim=0)
 
             means = code.mean(dim=0, keepdim=True)
             stds = code.std(dim=0, keepdim=True)
             normCode = (code - means) / stds
 
+            means = CLIPFeatures.mean(dim=0, keepdim=True)
+            stds = CLIPFeatures.std(dim=0, keepdim=True)
+            averagedCLIP = (CLIPFeatures - means) / stds
+            #print(f"normCode {normCode} averagedCLIP {averagedCLIP}")
 
             MSELoss = torch.nn.MSELoss()
+            #print(f"CLIP Features Shape {torch.stack(featureList).shape} Code Shape {code.shape} Code {code} \n\n Normcode {normCode} \n\n AveragedCLIP {averagedCLIP}")
+            #print(f"Code Shape {code.shape} Means Shape {means.shape} Stds Shape {stds.shape} \n normCode {normCode}")
             CLIPLoss = MSELoss(normCode, averagedCLIP)
             
             if use_discriminator:
@@ -373,7 +385,8 @@ class Trainer(TrainerTemplate):
             #
             #
             #print(self.with_captioning, " With_captioning")
-            
+            #print(f"CLIPLoss Type: {CLIPLoss.dtype} Loss Gen Type: {loss_gen.dtype}")
+            #exit()
             if self.with_captioning:
                 loss_gen_total = loss_rec_lat + p_weight * loss_pcpt + g_weight * self.disc_weight * loss_gen + loss_captioning * captioning_weight
             elif self.with_CLIPLoss:
@@ -438,9 +451,9 @@ class Trainer(TrainerTemplate):
         summary = accm.get_summary()
         summary['xs'] = xs
         
-        snapshot = tracemalloc.take_snapshot()
-        print("Display Top: ")
-        display_top(snapshot)
+        #snapshot = tracemalloc.take_snapshot()
+        #print("Display Top: ")
+        #display_top(snapshot)
 
         return summary
 
